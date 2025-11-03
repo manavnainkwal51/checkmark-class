@@ -42,15 +42,24 @@ const CreateClassDialog = ({ onClassCreated }: CreateClassDialogProps) => {
 
     setLoading(true);
 
-    const { data: codeData } = await supabase.rpc("generate_class_code");
-    const code = codeData;
-
     const { data: userData } = await supabase.auth.getUser();
+    
+    const { data: codeData, error: codeError } = await supabase.rpc("generate_class_code");
+    
+    if (codeError || !codeData) {
+      toast({
+        title: "Error",
+        description: "Failed to generate class code",
+        variant: "destructive"
+      });
+      setLoading(false);
+      return;
+    }
 
     const { error } = await supabase.from("classes").insert({
       name,
       subject,
-      code,
+      code: codeData,
       teacher_id: userData?.user?.id
     });
 
@@ -63,7 +72,7 @@ const CreateClassDialog = ({ onClassCreated }: CreateClassDialogProps) => {
     } else {
       toast({
         title: "Success",
-        description: `Class created with code: ${code}`
+        description: `Class created with code: ${codeData}`
       });
       setName("");
       setSubject("");
