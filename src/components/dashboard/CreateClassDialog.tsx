@@ -44,23 +44,48 @@ const CreateClassDialog = ({ onClassCreated }: CreateClassDialogProps) => {
 
     const { data: userData } = await supabase.auth.getUser();
     
+    // Try to generate code via backend function first, with client-side fallback for robustness
+    let codeToUse: string | null = null;
+
     const { data: codeData, error: codeError } = await supabase.rpc("generate_class_code");
-    
-    if (codeError || !codeData) {
-      toast({
-        title: "Error",
-        description: "Failed to generate class code",
-        variant: "destructive"
-      });
-      setLoading(false);
-      return;
+
+    if (!codeError && codeData) {
+      codeToUse = codeData;
+    } else {
+      // Fallback: client-side unique code generation with collision check
+      const gen = () =>
+        Array.from(crypto.getRandomValues(new Uint8Array(8)))
+          .map((n) => "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"[n % 36])
+          .join("");
+
+      for (let i = 0; i < 6; i++) {
+        const candidate = gen();
+        const { data: existing, error: selectErr } = await supabase
+          .from("classes")
+          .select("id")
+          .eq("code", candidate)
+          .maybeSingle();
+        if (!selectErr && !existing) {
+          codeToUse = candidate;
+          break;
+        }
+      }
+      if (!codeToUse) {
+        toast({
+          title: "Error",
+          description: "Failed to generate class code",
+          variant: "destructive",
+        });
+        setLoading(false);
+        return;
+      }
     }
 
     const { error } = await supabase.from("classes").insert({
       name,
       subject,
-      code: codeData,
-      teacher_id: userData?.user?.id
+      code: codeToUse,
+      teacher_id: userData?.user?.id,
     });
 
     if (error) {
@@ -72,7 +97,7 @@ const CreateClassDialog = ({ onClassCreated }: CreateClassDialogProps) => {
     } else {
       toast({
         title: "Success",
-        description: `Class created with code: ${codeData}`
+        description: `Class created with code: ${codeToUse}`
       });
       setName("");
       setSubject("");
